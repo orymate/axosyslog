@@ -136,14 +136,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata (AxoSyslog version) for Docker
-        id: docker-metadata-tags
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ needs.prepare.outputs.image-name }}
-          tags: type=match,pattern=axosyslog-([0-9].*),group=1
-          sep-tags: ','
-
       - name: Compose Docker image tags
         id: tags
         env:
@@ -152,7 +144,7 @@ jobs:
           IMAGE_NAME: ${{ needs.prepare.outputs.image-name }}
         run: |
           if [[ "$TYPE" = "stable" ]]; then
-            TAGS='${{ steps.docker-metadata-tags.outputs.tags }}'
+            TAGS='ghcr.io/axoflow/axosyslog:4.8.1,ghcr.io/axoflow/axosyslog:4.8.1-3,ghcr.io/axoflow/axosyslog:latest'
           elif [[ "$TYPE" = "snapshot" ]]; then
             TAGS="$(echo "$SNAPSHOT_TAGS" | sed "s|[^,]*|$IMAGE_NAME:&|g")"
           else
