@@ -311,6 +311,29 @@ destination d_counted {
     assert [int(sample.value) for sample in samples] == [NUM_MESSAGES]
 
 
+@pytest.mark.parametrize("unreachable_first", [True, False], ids=["unreachable-first", "unreachable-last"])
+def test_destination_failover_rejection_does_not_cut_off_sibling_destinations(config, syslog_ng, port_allocator, unreachable_first):
+    source = config.create_network_source(ip="localhost", port=port_allocator(), transport="tcp")
+    # no create-dirs(), so the file cannot be opened
+    unreachable = config.create_file_destination(file_name="missing-dir/unreachable.log")
+    reachable = config.create_file_destination(file_name="reachable.log")
+    secondary = config.create_file_destination(file_name="secondary.log")
+    primary_destinations = [unreachable, reachable] if unreachable_first else [reachable, unreachable]
+    alternatives = [
+        config.create_inner_logpath(statements=primary_destinations, flags="final"),
+        config.create_inner_logpath(statements=[secondary], flags="final"),
+    ]
+    config.create_logpath(statements=[source, config.create_inner_logpath(statements=alternatives, flags="destination-failover")])
+
+    syslog_ng.start(config)
+
+    messages = _messages("failover")
+    source.write_logs(_syslog_lines(messages))
+    assert len(secondary.read_until_logs(list(messages))) == NUM_MESSAGES
+    # the order of the destinations in the alternative must not matter
+    assert len(reachable.read_until_logs(list(messages))) == NUM_MESSAGES
+
+
 @pytest.mark.parametrize("shape", SHAPES)
 def test_destination_failover_reachable_primary_takes_everything(config, syslog_ng, port_allocator, shape):
     config.add_preamble(PREAMBLE)
