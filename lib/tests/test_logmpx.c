@@ -328,6 +328,41 @@ Test(logmpx, destination_failover_rejection_propagates_through_a_delivery_propag
   _free_pipe(&secondary->super);
 }
 
+Test(logmpx, destination_failover_rejected_message_skips_the_rest_of_its_branch)
+{
+  /* failover multiplexer -> mpx_ref -> leaf (the driver), with "after" as
+   * the pipe following the destination reference in the same branch, e.g.
+   * a filterx block counting the messages that branch accepted */
+  FailoverMockPipe *leaf = _failover_mock_pipe_new(NULL, TRUE);
+  FailoverMockPipe *after = _failover_mock_pipe_new(NULL, FALSE);
+  FailoverMockPipe *secondary = _failover_mock_pipe_new(NULL, FALSE);
+  LogMultiplexer *mpx_ref = log_multiplexer_new(NULL);
+
+  log_multiplexer_disable_delivery_propagation(mpx_ref);
+  log_pipe_init(&leaf->super);
+  log_multiplexer_add_next_hop(mpx_ref, &leaf->super);
+  log_pipe_init(&after->super);
+  log_pipe_append(&mpx_ref->super, &after->super);
+
+  LogPipe *pipes[2] = { &mpx_ref->super, &secondary->super };
+  LogMultiplexer *mpx = _create_destination_failover_mpx(NULL, pipes, 2);
+
+  _queue_empty_message(&mpx->super);
+  cr_assert_eq(after->captured_messages->len, 0, "a rejected message must not continue along its branch");
+  cr_assert_eq(secondary->captured_messages->len, 1);
+
+  leaf->down = FALSE;
+  _queue_empty_message(&mpx->super);
+  cr_assert_eq(after->captured_messages->len, 1, "an accepted message continues along its branch");
+  cr_assert_eq(secondary->captured_messages->len, 1);
+
+  _free_pipe(&mpx->super);
+  _free_pipe(&mpx_ref->super);
+  _free_pipe(&leaf->super);
+  _free_pipe(&after->super);
+  _free_pipe(&secondary->super);
+}
+
 static void
 setup(void)
 {

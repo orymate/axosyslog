@@ -279,6 +279,38 @@ destination d_dropping {
     assert not Path("dropped.log").exists()
 
 
+def test_destination_failover_rejected_message_skips_the_rest_of_its_branch(config, syslog_ng, port_allocator):
+    Path("dir-good").mkdir()
+    config.add_preamble(
+        r"""
+destination d_counted {
+    channel {
+        destination { file("dir-${PROGRAM}/primary.log"); };
+        filterx { update_metric("accepted_events_total"); };
+    };
+};
+""",
+    )
+
+    source = config.create_network_source(ip="localhost", port=port_allocator(), transport="tcp")
+    primary = _NamedDestinationReference("d_counted")
+    secondary = config.create_file_destination(file_name="secondary.log")
+    _create_failover_logpath(config, source, primary, secondary)
+
+    syslog_ng.start(config)
+
+    good_messages = _messages("good")
+    bad_messages = _messages("bad")
+    good_lines = ["<13>Oct 11 22:14:15 host good: {}".format(message) for message in good_messages]
+    bad_lines = ["<13>Oct 11 22:14:15 host bad: {}".format(message) for message in bad_messages]
+    source.write_logs(good_lines + bad_lines)
+    assert len(secondary.read_until_logs(bad_messages)) == NUM_MESSAGES
+    assert len(_read_lines("dir-good/primary.log", NUM_MESSAGES)) == NUM_MESSAGES
+
+    samples = config.get_prometheus_samples([MetricFilter("syslogng_accepted_events_total", {})])
+    assert [int(sample.value) for sample in samples] == [NUM_MESSAGES]
+
+
 @pytest.mark.parametrize("shape", SHAPES)
 def test_destination_failover_reachable_primary_takes_everything(config, syslog_ng, port_allocator, shape):
     config.add_preamble(PREAMBLE)

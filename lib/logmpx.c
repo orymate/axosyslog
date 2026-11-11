@@ -215,6 +215,14 @@ log_multiplexer_queue(LogPipe *s, LogMessage *msg, const LogPathOptions *path_op
       if (!delivered && path_options->matched)
         *path_options->matched = FALSE;
     }
+
+  /* a message our destinations rejected leaves this failover alternative:
+   * the next alternative takes it, the rest of this one must not see it */
+  if (!delivered && !self->delivery_propagation && path_options->destination_failover)
+    {
+      log_msg_drop(msg, path_options, AT_PROCESSED);
+      return;
+    }
   log_pipe_forward_msg(s, msg, path_options);
 }
 
